@@ -2,6 +2,9 @@ package com.openclassrooms.tourguide.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.springframework.stereotype.Service;
 
@@ -18,7 +21,7 @@ public class RewardsService {
 
     private static final double STATUTE_MILES_PER_NAUTICAL_MILE = 1.15077945;
 
-    // Proximity in miles
+    // proximity in miles
     private int defaultProximityBuffer = 10;
     private int proximityBuffer = defaultProximityBuffer;
     private int attractionProximityRange = 200;
@@ -26,9 +29,17 @@ public class RewardsService {
     private final GpsUtil gpsUtil;
     private final RewardCentral rewardsCentral;
 
+    // Cache of attractions (they don't change during the life of the app)
+    private final List<Attraction> attractions;
+
+    // Thread pool used to calculate rewards for multiple users in parallel
+    private final ExecutorService rewardsExecutor =
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+
     public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
         this.gpsUtil = gpsUtil;
         this.rewardsCentral = rewardCentral;
+        this.attractions = new ArrayList<>(gpsUtil.getAttractions());
     }
 
     public void setProximityBuffer(int proximityBuffer) {
@@ -40,14 +51,12 @@ public class RewardsService {
     }
 
     public void calculateRewards(User user) {
-        // Work on a copy of the list to avoid ConcurrentModificationException
+        // Work on a copy to avoid ConcurrentModificationException
         List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
-        List<Attraction> attractions = gpsUtil.getAttractions();
 
         for (VisitedLocation visitedLocation : userLocations) {
             for (Attraction attraction : attractions) {
 
-                // Check if a reward for this attraction already exists for the user
                 boolean alreadyRewarded = user.getUserRewards().stream()
                         .anyMatch(r -> r.attraction.attractionName.equals(attraction.attractionName));
 
@@ -59,6 +68,19 @@ public class RewardsService {
         }
     }
 
+    /**
+     * Calculate rewards for all users in parallel.
+     * This is used for high-volume performance scenarios.
+     */
+    public void calculateRewardsForAllUsers(List<User> users) {
+        List<CompletableFuture<Void>> futures = users.stream()
+                .map(user -> CompletableFuture.runAsync(
+                        () -> calculateRewards(user), rewardsExecutor))
+                .toList();
+
+        futures.forEach(CompletableFuture::join);
+    }
+
     public boolean isWithinAttractionProximity(Attraction attraction, Location location) {
         return getDistance(attraction, location) <= attractionProximityRange;
     }
@@ -67,6 +89,7 @@ public class RewardsService {
         return getDistance(attraction, visitedLocation.location) <= proximityBuffer;
     }
 
+    // Now public so controller can use it
     public int getRewardPoints(Attraction attraction, User user) {
         return rewardsCentral.getAttractionRewardPoints(attraction.attractionId, user.getUserId());
     }

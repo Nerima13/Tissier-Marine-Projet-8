@@ -16,6 +16,9 @@ import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import java.util.Comparator;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -41,6 +44,10 @@ public class TourGuideService {
     private final TripPricer tripPricer = new TripPricer();
     public final Tracker tracker;
     boolean testMode = true;
+
+    // Thread pool used to process multiple users in parallel
+    private final ExecutorService locationExecutor =
+            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
 
     public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
         this.gpsUtil = gpsUtil;
@@ -107,6 +114,20 @@ public class TourGuideService {
     }
 
     /**
+     * Track the location of all given users in parallel.
+     * Used for performance scenarios (100k users).
+     */
+    public void trackUserLocations(List<User> users) {
+        List<CompletableFuture<Void>> futures = users.stream()
+                .map(user -> CompletableFuture.runAsync(
+                        () -> trackUserLocation(user), locationExecutor))
+                .collect(Collectors.toList());
+
+        // Wait for all tasks to complete
+        futures.forEach(CompletableFuture::join);
+    }
+
+    /**
      * Returns the 5 closest attractions from the given visited location,
      * regardless of the distance.
      */
@@ -156,8 +177,7 @@ public class TourGuideService {
             user.addToVisitedLocations(new VisitedLocation(
                     user.getUserId(),
                     new Location(generateRandomLatitude(), generateRandomLongitude()),
-                    getRandomTime()
-            ));
+                    getRandomTime()));
         });
     }
 
