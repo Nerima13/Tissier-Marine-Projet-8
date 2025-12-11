@@ -33,8 +33,9 @@ public class RewardsService {
     private final List<Attraction> attractions;
 
     // Thread pool used to calculate rewards for multiple users in parallel
+    private static final int REWARDS_POOL_SIZE = 100;
     private final ExecutorService rewardsExecutor =
-            Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2);
+            Executors.newFixedThreadPool(REWARDS_POOL_SIZE);
 
     public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
         this.gpsUtil = gpsUtil;
@@ -63,10 +64,14 @@ public class RewardsService {
                 if (!alreadyRewarded && nearAttraction(visitedLocation, attraction)) {
                     int rewardPoints = getRewardPoints(attraction, user);
                     user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+
+                    // Once we have a reward for this visitedLocation, there is no need to check all remaining attractions.
+                    break;
                 }
             }
         }
     }
+
 
     /**
      * Calculate rewards for all users in parallel.
