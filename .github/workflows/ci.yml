@@ -1,0 +1,58 @@
+# Simple CI pipeline for TourGuide: compile, test, package, and upload the JAR artifact.
+
+name: TourGuide CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "dev" ]
+  pull_request:
+    branches: [ "dev" ]
+
+jobs:
+  build-test-package:
+    runs-on: ubuntu-latest
+
+    # All run commands are executed inside the TourGuide directory
+    defaults:
+      run:
+        working-directory: TourGuide
+
+    steps:
+      # Checkout source code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Set up Java (same as local environment)
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          java-version: "24"
+          distribution: "temurin"
+          cache: "maven"
+
+      # Install external JAR dependencies into local Maven repository
+      - name: Install external JAR dependencies
+        run: |
+          mvn install:install-file -Dfile=libs/gpsUtil.jar -DgroupId=gpsUtil -DartifactId=gpsUtil -Dversion=1.0.0 -Dpackaging=jar
+          mvn install:install-file -Dfile=libs/tripPricer.jar -DgroupId=tripPricer -DartifactId=tripPricer -Dversion=1.0.0 -Dpackaging=jar
+          mvn install:install-file -Dfile=libs/rewardCentral.jar -DgroupId=rewardCentral -DartifactId=rewardCentral -Dversion=1.0.0 -Dpackaging=jar
+
+      # Compile project
+      - name: Compile project
+        run: mvn -B -DskipTests clean compile
+
+      # Run unit tests (performance tests are disabled)
+      - name: Run tests
+        run: mvn -B test
+
+      # Build executable JAR
+      - name: Package application
+        run: mvn -B package -DskipTests
+
+      # Upload JAR artifact
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tourguide-jar
+          path: TourGuide/target/*.jar
