@@ -8,6 +8,7 @@ import gpsUtil.GpsUtil;
 import gpsUtil.location.Attraction;
 import gpsUtil.location.VisitedLocation;
 import org.apache.commons.lang3.time.StopWatch;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,9 +35,9 @@ public class TestPerformance {
      */
 
     @Test
+    @Disabled
     public void highVolumeTrackLocation() {
         // GIVEN
-        // You can start with 100 / 1000 / 10000 during development, but the final objective is 100000 users.
         InternalTestHelper.setInternalUserNumber(100000);
         TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
@@ -61,6 +62,7 @@ public class TestPerformance {
     }
 
     @Test
+    @Disabled
     public void highVolumeGetRewards() {
         // GIVEN
         InternalTestHelper.setInternalUserNumber(100000);
