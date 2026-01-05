@@ -1,9 +1,9 @@
 package com.openclassrooms.tourguide.user;
 
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import gpsUtil.location.VisitedLocation;
 import tripPricer.Provider;
@@ -16,10 +16,10 @@ public class User {
     private String emailAddress;
     private Date latestLocationTimestamp;
 
-    private final List<VisitedLocation> visitedLocations = new ArrayList<>();
-    private final List<UserReward> userRewards = new ArrayList<>();
+    private final List<VisitedLocation> visitedLocations = new CopyOnWriteArrayList<>();
+    private final List<UserReward> userRewards = new CopyOnWriteArrayList<>();
     private UserPreferences userPreferences = new UserPreferences();
-    private List<Provider> tripDeals = new ArrayList<>();
+    private List<Provider> tripDeals = new CopyOnWriteArrayList<>();
 
     public User(UUID userId, String userName, String phoneNumber, String emailAddress) {
         this.userId = userId;
@@ -74,10 +74,12 @@ public class User {
 
     /**
      * Adds a reward only if no reward already exists for the same attraction.
+     * Thread-safe thanks to CopyOnWriteArrayList.
      */
     public void addUserReward(UserReward userReward) {
         boolean alreadyRewarded = userRewards.stream()
-                .anyMatch(r -> r.attraction.attractionName.equals(userReward.attraction.attractionName));
+                .anyMatch(r -> r.attraction.attractionId
+                        .equals(userReward.attraction.attractionId));
 
         if (!alreadyRewarded) {
             userRewards.add(userReward);

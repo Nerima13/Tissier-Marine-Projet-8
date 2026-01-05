@@ -1,7 +1,6 @@
 package com.openclassrooms.tourguide.service;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,21 +51,25 @@ public class RewardsService {
     }
 
     public void calculateRewards(User user) {
-        // Work on a copy to avoid ConcurrentModificationException
+        // Create a snapshot of visited locations to avoid concurrent modifications
         List<VisitedLocation> userLocations = new ArrayList<>(user.getVisitedLocations());
+
+        // Snapshot of already rewarded attractions to avoid iterating and modifying the same collection
+        Set<UUID> rewardedAttractionIds = new HashSet<>();
+        for (UserReward r : new ArrayList<>(user.getUserRewards())) {
+            rewardedAttractionIds.add(r.attraction.attractionId);
+        }
 
         for (VisitedLocation visitedLocation : userLocations) {
             for (Attraction attraction : attractions) {
 
-                boolean alreadyRewarded = user.getUserRewards().stream()
-                        .anyMatch(r -> r.attraction.attractionName.equals(attraction.attractionName));
+                if (!rewardedAttractionIds.contains(attraction.attractionId)
+                        && nearAttraction(visitedLocation, attraction)) {
 
-                if (!alreadyRewarded && nearAttraction(visitedLocation, attraction)) {
                     int rewardPoints = getRewardPoints(attraction, user);
                     user.addUserReward(new UserReward(visitedLocation, attraction, rewardPoints));
+                    rewardedAttractionIds.add(attraction.attractionId);
 
-                    // Once we have a reward for this visitedLocation, there is no need to check all remaining attractions.
-                    break;
                 }
             }
         }
