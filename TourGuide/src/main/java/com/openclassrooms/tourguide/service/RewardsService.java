@@ -5,6 +5,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
 import gpsUtil.GpsUtil;
@@ -33,8 +34,7 @@ public class RewardsService {
 
     // Thread pool used to calculate rewards for multiple users in parallel
     private static final int REWARDS_POOL_SIZE = 100;
-    private final ExecutorService rewardsExecutor =
-            Executors.newFixedThreadPool(REWARDS_POOL_SIZE);
+    private final ExecutorService rewardsExecutor = Executors.newFixedThreadPool(REWARDS_POOL_SIZE);
 
     public RewardsService(GpsUtil gpsUtil, RewardCentral rewardCentral) {
         this.gpsUtil = gpsUtil;
@@ -75,7 +75,6 @@ public class RewardsService {
         }
     }
 
-
     /**
      * Calculate rewards for all users in parallel.
      * This is used for high-volume performance scenarios.
@@ -114,5 +113,14 @@ public class RewardsService {
         double nauticalMiles = 60 * Math.toDegrees(angle);
         double statuteMiles = STATUTE_MILES_PER_NAUTICAL_MILE * nauticalMiles;
         return statuteMiles;
+    }
+
+    /**
+     * Shutdown the rewards executor service when the application stops.
+     * This prevents background threads from running after application shutdown.
+     */
+    @PreDestroy
+    public void shutdown() {
+        rewardsExecutor.shutdownNow();
     }
 }

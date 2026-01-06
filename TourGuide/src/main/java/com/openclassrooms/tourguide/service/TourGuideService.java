@@ -5,39 +5,40 @@ import com.openclassrooms.tourguide.tracker.Tracker;
 import com.openclassrooms.tourguide.user.User;
 import com.openclassrooms.tourguide.user.UserReward;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
-import java.util.Comparator;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 import gpsUtil.GpsUtil;
 import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
 import tripPricer.Provider;
 import tripPricer.TripPricer;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 public class TourGuideService {
 
-    private Logger logger = LoggerFactory.getLogger(TourGuideService.class);
+    private final Logger logger = LoggerFactory.getLogger(TourGuideService.class);
 
     private final GpsUtil gpsUtil;
     private final RewardsService rewardsService;
@@ -80,14 +81,18 @@ public class TourGuideService {
         return internalUserMap.get(userName);
     }
 
+    /**
+     * Returns a copy to avoid concurrency issues (Tracker thread vs test thread).
+     */
     public List<User> getAllUsers() {
-        return internalUserMap.values().stream().collect(Collectors.toList());
+        return new ArrayList<>(internalUserMap.values());
     }
 
+    /**
+     * Thread-safe "add if absent" (avoids race condition).
+     */
     public void addUser(User user) {
-        if (!internalUserMap.containsKey(user.getUserName())) {
-            internalUserMap.put(user.getUserName(), user);
-        }
+        internalUserMap.putIfAbsent(user.getUserName(), user);
     }
 
     public List<Provider> getTripDeals(User user) {
@@ -119,8 +124,7 @@ public class TourGuideService {
      */
     public void trackUserLocations(List<User> users) {
         List<CompletableFuture<Void>> futures = users.stream()
-                .map(user -> CompletableFuture.runAsync(
-                        () -> trackUserLocation(user), locationExecutor))
+                .map(user -> CompletableFuture.runAsync(() -> trackUserLocation(user), locationExecutor))
                 .collect(Collectors.toList());
 
         // Wait for all tasks to complete
@@ -135,18 +139,31 @@ public class TourGuideService {
         List<Attraction> attractions = gpsUtil.getAttractions();
 
         return attractions.stream()
-                .sorted(Comparator.comparingDouble(
-                        a -> rewardsService.getDistance(a, visitedLocation.location)))
+                .sorted(Comparator.comparingDouble(a -> rewardsService.getDistance(a, visitedLocation.location)))
                 .limit(5)
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Properly stop background threads when the app shuts down
+     * (prevents Maven/CI from hanging).
+     */
     private void addShutDownHook() {
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            public void run() {
-                tracker.stopTracking();
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // 1) Stop Tracker thread
+            tracker.stopTracking();
+
+            // 2) Stop executor threads cleanly
+            locationExecutor.shutdown();
+            try {
+                if (!locationExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    locationExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                locationExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
             }
-        });
+        }));
     }
 
     /**********************************************************************************
@@ -155,9 +172,9 @@ public class TourGuideService {
      *
      **********************************************************************************/
     private static final String tripPricerApiKey = "test-server-api-key";
-    // Database connection will be used for external users, but for testing purposes
-    // internal users are provided and stored in memory
-    private final Map<String, User> internalUserMap = new HashMap<>();
+
+    // Internal users are stored in memory (must be thread-safe)
+    private final Map<String, User> internalUserMap = new ConcurrentHashMap<>();
 
     private void initializeInternalUsers() {
         IntStream.range(0, InternalTestHelper.getInternalUserNumber()).forEach(i -> {
